@@ -1,0 +1,60 @@
+---
+# tasks file for fusioninventory-collector
+
+  - name: Install dependencies for file synchronization
+    ansible.builtin.package:
+      name: "{{ fusioninventory_collector_sync_dependencies }}"
+      state: present
+
+  - name: Create local account with ssh key for file synchronization
+    user:
+      name: "{{ item.name }}"
+      groups: "{{ item.groups }}"
+      comment: "{{ item.comment }}"
+      shell: "{{ item.shell }}"
+      generate_ssh_key: "{{ item.generate_ssh_key }}"
+      state: present
+    loop: "{{ fusioninventory_collector_sync_user }}"
+
+  - name: Fetch public key
+    fetch:
+      src: "{{ item.home }}/.ssh/id_rsa.pub"
+      dest: "{{ item.authorized }}"
+      flat: yes
+    loop: "{{ fusioninventory_collector_sync_user }}"
+
+  - name: Prepare directory tree to store dumps
+    file:
+      path: "{{ item }}"
+      state: directory
+      owner: "{{ fusioninventory_collector_sync_user.0.name }}"
+      group: "www-data"
+      mode: "0775"
+    loop:
+    - /var/www/data
+    - "{{ fusioninventory_collector_dump_dir }}"
+
+  - name: Deploy GLPI credentials
+    ansible.builtin.blockinfile:
+      path: "{{ fusioninventory_collector_server_credentials }}"
+      block: |
+        GLPI_USERNAME='{{ fusioninventory_collector_server_username }}'
+        GLPI_PASSWORD='{{ fusioninventory_collector_server_password }}'
+      owner: "{{ fusioninventory_collector_sync_user.0.name }}"
+      group: "{{ fusioninventory_collector_sync_user.0.group }}"
+      mode: 0700
+      backup: yes
+      create: yes
+
+  - name: Schedule cron tasks
+    ansible.builtin.cron:
+      name: "{{ item.name }}"
+      weekday: "{{ item.weekday }}"
+      minute: "{{ item.minute }}"
+      hour: "{{ item.hour }}"
+      user: "{{ item.user }}"
+      job: "{{ item.job }}"
+      cron_file: "{{ item.cron_file }}"
+    loop: "{{ fusioninventory_collector_injector_cron_list }}"
+    when: fusioninventory_collector_injector_cron_state == "present"
+

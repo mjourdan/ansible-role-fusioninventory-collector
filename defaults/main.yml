@@ -1,0 +1,84 @@
+---
+# defaults file for fusioninventory-collector
+
+# FusionInventory Collector settings
+# ----------------------------------
+
+# The tool to collect your DMZ inventories by using a limited script that get the POST request of the agents
+fusioninventory_collector_script_name: collect.php
+fusioninventory_collector_state: absent
+fusioninventory_collector_owner: root
+fusioninventory_collector_group: root
+fusioninventory_collector_mode: 0644
+fusioninventory_collector_install_dir: /var/www/html/fusioninventory
+fusioninventory_collector_dump_dir: /var/www/data/fusioninventory-dumps
+
+# Webserver configuration content for collector
+fusioninventory_collector_webserver_hostname: inventory-collector.example.net
+fusioninventory_collector_webserver_port: "443 ssl"
+fusioninventory_collector_webserver_ssl_crt: "/etc/ssl/certs/{{ fusioninventory_collector_webserver_hostname }}.crt"
+fusioninventory_collector_webserver_ssl_key: "/etc/ssl/private/{{ fusioninventory_collector_webserver_hostname }}.key"
+fusioninventory_collector_webserver_ssl_protocols: "TLSv1.1 TLSv1.2 TLSv1.3"
+fusioninventory_collector_webserver_ssl_ciphers: "HIGH:!aNULL:!MD5"
+fusioninventory_collector_webserver_html_rootdir: "{{ fusioninventory_collector_install_dir }}"
+fusioninventory_collector_webserver_html_index: "{{ fusioninventory_collector_script_name }}"
+fusioninventory_collector_webserver_user: nginx
+fusioninventory_collector_webserver_group: nginx
+
+# Webserver configuration file for collector
+fusioninventory_collector_webserver_conf_path: /etc/nginx/conf.d/fusioninventory-collector.conf
+fusioninventory_collector_webserver_conf_owner: root
+fusioninventory_collector_webserver_conf_group: root
+fusioninventory_collector_webserver_conf_mode: 0644
+
+
+# FusionInventory Agent settings
+# ------------------------------
+
+# The above settings will give the following url to configure inventory agents in dmz:
+fusioninventory_collector_url: "https://{{ fusioninventory_collector_webserver_hostname }}/{{ fusioninventory_collector_script_name }}"
+
+
+# FusionInventory Server settings
+# -------------------------------
+
+# Actual inventory server where the data will be pushed by the injector
+fusioninventory_collector_server_credentials: /home/glpi/.credentials
+fusioninventory_collector_server_username: demo
+fusioninventory_collector_server_password: demo
+fusioninventory_collector_server_hostname: glpi-server
+fusioninventory_collector_server_path: plugins/fusioninventory/
+fusioninventory_collector_server_url: "https://${GLPI_USERNAME}:${GLPI_PASSWORD}@{{ fusioninventory_collector_server_hostname }}/{{ fusioninventory_collector_server_path }}"
+
+# The tool to push inventory in an OCS Inventory or compatible server
+fusioninventory_collector_injector_state: absent
+fusioninventory_collector_injector_cmd_path: /usr/bin/fusioninventory-injector
+fusioninventory_collector_injector_dump_dir: /var/www/data/fusioninventory-dumps
+fusioninventory_collector_injector_cmd_options: "-v -R -d {{ fusioninventory_collector_injector_dump_dir }} --url {{ fusioninventory_collector_server_url }}"
+fusioninventory_collector_injector_cmd: ". {{ fusioninventory_collector_server_credentials }} ; {{ fusioninventory_collector_injector_cmd_path }} {{ fusioninventory_collector_injector_cmd_options }}"
+
+# The method to fetch data from the collector
+fusioninventory_collector_sync_dependencies: "rsync"
+fusioninventory_collector_sync_cmd: "/usr/bin/rsync -avz --remove-source-files {{ fusioninventory_collector_webserver_hostname }}:{{ fusioninventory_collector_dump_dir }}/* {{ fusioninventory_collector_injector_dump_dir }}"
+fusioninventory_collector_sync_user:
+  - name: glpi
+    group: glpi
+    groups: [ 'www-data', 'sshusers' ]
+    append: yes
+    comment: "used for inventory synchronization"
+    home: /home/glpi
+    shell: /bin/bash
+    generate_ssh_key: yes
+    authorized: /tmp/id_rsa_glpi.pub
+
+# Regulary fetch inventories from collector, then inject them into the server
+fusioninventory_collector_injector_cron_state: absent
+fusioninventory_collector_injector_cron_list:
+  - name: fetch inventories from dmz and inject them twice a day
+    weekday: "*"
+    minute: "00"
+    hour: "13,19"
+    user: "{{ fusioninventory_collector_sync_user.0.name }}"
+    job: "{{ fusioninventory_collector_sync_cmd }} ; {{ fusioninventory_collector_injector_cmd }}"
+    cron_file: fusioninventory
+

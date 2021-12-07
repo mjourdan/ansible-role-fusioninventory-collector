@@ -1,0 +1,11 @@
+---
+# tasks file for fusioninventory-collector
+
+- name: Install collector in dmz
+  include_tasks: collector.yml
+  when: fusioninventory_collector_state == "present"
+
+- name: Call injector from your inventory server
+  include_tasks: injector.yml
+  when: fusioninventory_collector_injector_state == "present"
+

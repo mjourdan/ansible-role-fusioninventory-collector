@@ -1,0 +1,76 @@
+---
+# tasks file for fusioninventory-collector
+
+  - name: Install dependencies for file synchronization
+    ansible.builtin.package:
+      name: "{{ fusioninventory_collector_sync_dependencies }}"
+      state: present
+
+  - name: Authorize anyone to browse the www directory
+    file:
+      path: "{{ item }}"
+      state: directory
+      mode: "0755"
+    loop:
+    - /var/www/
+    - /var/www/html
+    - /var/www/data
+
+  - name: Create directory trees
+    file:
+      path: "{{ item }}"
+      state: directory
+      owner: "{{ item.owner }}"
+      group: "{{ item.group }}"
+      mode: "{{ item.mode }}"
+      recurse: "{{ item.recurse }}"
+    loop:
+      # Prepare installation directory
+      - path: "{{ fusioninventory_collector_install_dir }}"
+        owner: "{{ fusioninventory_collector_owner }}"
+        group: "{{ fusioninventory_collector_group }}"
+        mode: "0755"
+        recurse: no
+      # authorize webserver to write dumps, and sync user to read them
+      - path: "{{ fusioninventory_collector_dump_dir }}"
+        owner: "{{ fusioninventory_collector_webserver_user }}"
+        group: "www-data"
+        mode: "0775"
+        recurse: no
+
+  - name: Create local account for file synchronization
+    user:
+      name: "{{ item.name }}"
+      groups: "{{ item.groups }}"
+      comment: "{{ item.comment }}"
+      shell: "{{ item.shell }}"
+      state: present
+    loop: "{{ fusioninventory_collector_sync_user }}"
+    tags:
+    - users
+
+  - name: Authorize ssh key
+    authorized_key:
+      user: "{{ item.name }}"
+      key: "{{ lookup('file', item.authorized) }}"
+      state: present
+    loop: "{{ fusioninventory_collector_sync_user }}"
+    # avoir errors for check mode when user is missing
+    ignore_errors: true
+
+  - name: Install collect.php for hosts in dmz
+    template:
+      src: "./{{ fusioninventory_collector_install_dir }}/{{ fusioninventory_collector_script_name }}"
+      dest: "{{ fusioninventory_collector_install_dir }}/{{ fusioninventory_collector_script_name }}"
+      owner: "{{ fusioninventory_collector_owner }}"
+      group: "{{ fusioninventory_collector_group }}"
+      mode: "{{ fusioninventory_collector_mode }}"
+
+  - name: Configure web server
+    template:
+      src: "./{{ fusioninventory_collector_webserver_conf_path }}"
+      dest: "{{ fusioninventory_collector_webserver_conf_path }}"
+      owner: "{{ fusioninventory_collector_webserver_conf_owner }}"
+      group: "{{ fusioninventory_collector_webserver_conf_group }}"
+      mode: "{{ fusioninventory_collector_webserver_conf_mode }}"
+    notify: reload nginx
